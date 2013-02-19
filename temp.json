@@ -1,0 +1,8 @@
+{
+  "Lists": [{
+    "Name": "foo", 
+    "Items": [
+      {"Name": "bar", "Value": "http://example.com"}
+    ]
+  }]
+}
