@@ -2,90 +2,23 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
+	"os/exec"
+	"runtime"
 )
 
 type Config struct {
 	Backend string
 }
 
-type Client struct {
-}
-
-type List struct {
-	Name  string
-	Items []Item
-}
-
-type Item struct {
-	Name  string
-	Value string
-}
-
-type Store struct {
-	Lists []List
-	Dirty bool
-}
-
-// The list of Lists in your JSON data, sorted by number of items descending.
-func (s *Store) Items() []Item {
-	items := []Item{}
-
-	for _, list := range s.Lists {
-		for _, item := range list.Items {
-			items = append(items, item)
-		}
-	}
-
-	return items
-}
-
-func (s *Store) CreateList(name string) {
-	s.Lists = append(s.Lists, List{Name: name})
-	s.Dirty = true
-}
-
-func (s *Store) FindList(name string) (List, bool) {
-	for _, list := range s.Lists {
-		if list.Name == name {
-			return list, true
-		}
-	}
-
-	return List{}, false
-}
-
-func (s *Store) FindItem(name string) (Item, bool) {
-	for _, list := range s.Lists {
-		for _, item := range list.Items {
-			if item.Name == name {
-				return item, true
-			}
-		}
-	}
-
-	return Item{}, false
-}
-
-func (s *Store) PrintAll() {
-	for _, list := range s.Lists {
-		for _, item := range list.Items {
-			fmt.Println(item.Name)
-		}
-	}
-}
-
-func (s *Store) PrintSummary() {
-	for _, list := range s.Lists {
-		fmt.Printf("  %v (%d)\n", list.Name, len(list.Items))
-	}
-}
+type Store map[string]map[string]string
 
 type Backend interface {
-	Save(store Store) error
+	Save(Store) error
 	Fetch() (Store, error)
 }
 
@@ -112,10 +45,6 @@ func (jb *JsonBackend) Fetch() (Store, error) {
 }
 
 func (jb *JsonBackend) Save(store Store) error {
-	if !store.Dirty {
-		return nil
-	}
-
 	bytes, err := json.Marshal(store)
 
 	if err != nil {
@@ -136,7 +65,96 @@ func load(config Config) (Backend, error) {
 	return &backend, nil
 }
 
-func showHelpMessage() {
+func copyToClipboard(key string, contents string) error {
+	cmd := exec.Command("xclip", "-selection", "clipboard")
+
+	if runtime.GOOS == "darwin" {
+		cmd = exec.Command("pbcopy", contents)
+	} else if runtime.GOOS == "windows" {
+		cmd = exec.Command("clip", contents)
+	}
+
+	w, err := cmd.StdinPipe()
+
+	if err != nil {
+		return err
+	}
+
+	_, err = w.Write([]byte(contents))
+
+	if err != nil {
+		return err
+	}
+
+	w.Close()
+
+	fmt.Printf("Boom! We just copied %s to your clipboard.\n", key)
+	return cmd.Run()
+}
+
+type Runner struct {
+	storage Store
+	backend Backend
+}
+
+func (c *Runner) All() error {
+	for name, values := range c.storage {
+		fmt.Println("  " + name)
+		for key, value := range values {
+			fmt.Printf("    %s: %s\n", key, value)
+		}
+	}
+	return nil
+}
+
+func (c *Runner) Overview() error {
+	for name, values := range c.storage {
+		fmt.Printf("  %v (%d)\n", name, len(values))
+	}
+
+	if len(c.storage) > 0 {
+		return nil
+	}
+
+	fmt.Println("You don't have anything yet! To start out, create a new list:")
+	fmt.Println("  $ boom <list-name>")
+	fmt.Println("And then add something to your list!")
+	fmt.Println("  $ boom <list-name> <item-name> <item-value>")
+	fmt.Println("You can then grab your new item:")
+	fmt.Println("  $ boom <item-name>")
+	return nil
+}
+
+func (c *Runner) Execute() error {
+	flag.Parse()
+
+	backend, err := load(Config{})
+
+	if err != nil {
+		return err
+	}
+
+	store, err := backend.Fetch()
+
+	if err != nil {
+		return err
+	}
+
+	c.backend = backend
+	c.storage = store
+
+	command := flag.Arg(0)
+	major := flag.Arg(1)
+	minor := flag.Arg(2)
+
+	if command == "" {
+		return c.Overview()
+	}
+
+	return c.Delegate(command, major, minor)
+}
+
+func (c *Runner) Help() error {
 	help := `
 	- boom: help ---------------------------------------------------
 
@@ -165,92 +183,176 @@ func showHelpMessage() {
 	all other documentation is located at:
 	https://github.com/holman/boom
 	`
-	fmt.Println(help)
+	_, err := fmt.Println(help)
+	return err
 }
 
-func showEmptyMessage() {
-	fmt.Println("You don't have anything yet! To start out, create a new list:")
-	fmt.Println("  $ boom <list-name>")
-	fmt.Println("And then add something to your list!")
-	fmt.Println("  $ boom <list-name> <item-name> <item-value>")
-	fmt.Println("You can then grab your new item:")
-	fmt.Println("  $ boom <item-name>")
+func (c *Runner) Edit() error {
+	return nil
 }
 
-type Command struct {
+func (c *Runner) Switch(backend string) error {
+	return nil
 }
 
-func match(commands ...string) bool {
-	matched := true
-	for i, cmd := range commands {
-		if len(flag.Arg(i)) == 0 {
-			matched = false
-		} else {
-			matched = matched && (cmd == flag.Arg(i) || cmd[0] == '<')
+func (c *Runner) ShowStorage() error {
+	return nil
+}
+
+func (c *Runner) ShowVersion() error {
+	_, err := fmt.Println("0.0.1")
+	return err
+}
+
+func (c *Runner) DetailList(name string) error {
+	values, ok := c.storage[name]
+
+	if !ok {
+		return errors.New("Unknown list " + name)
+	}
+
+	for key, value := range values {
+		fmt.Printf("    %s: %s\n", key, value)
+	}
+
+	return nil
+}
+
+func (c *Runner) DeleteItem(name string, key string) error {
+	fmt.Println("Boom! " + key + " is gone forever")
+
+	if values, ok := c.storage[name]; ok {
+		if _, ok = values[key]; ok {
+			delete(values, name)
+			return c.Save()
 		}
 	}
-	return matched
+
+	return nil
 }
 
+func (c *Runner) DeleteList(name string) error {
+	fmt.Printf("You sure you want to delete everything in %s? (y/n):\n", name)
 
+	var answer string
+	fmt.Scanf("%s", &answer)
+
+	if answer == "yes" || answer == "y" {
+		delete(c.storage, name)
+		fmt.Printf("Boom! Deleted all your %s.\n", name)
+		return c.Save()
+	}
+
+	return nil
+}
+
+func (c *Runner) ListExists(name string) bool {
+	_, ok := c.storage[name]
+	return ok
+}
+
+func (c *Runner) AddList(name string) error {
+	if _, ok := c.storage[name]; ok {
+		return nil
+	}
+
+	fmt.Printf("Boom! Created a new list called %s.\n", name)
+	c.storage[name] = make(map[string]string)
+	return c.Save()
+}
+
+func (c *Runner) AddItem(name string, key string, value string) error {
+	if values, ok := c.storage[name]; !ok {
+		fmt.Printf("Boom! Created a new list called %s.\n", name)
+		values = make(map[string]string)
+		c.storage[name] = values
+	}
+
+	fmt.Printf("Boom! %s in %s is %s. Got it\n", key, name, value)
+
+	c.storage[name][key] = value
+	c.Save()
+
+	return nil
+}
+
+func (c *Runner) ItemExists(key string) bool {
+	for _, values := range c.storage {
+		if _, ok := values[key]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Runner) SearchItem(key string) error {
+	for _, values := range c.storage {
+		if value, ok := values[key]; ok {
+			return copyToClipboard(key, value)
+		}
+	}
+	return errors.New("Couldn't find key: " + key)
+}
+
+func (c *Runner) SearchListItem(name string, key string) error {
+	values, ok := c.storage[name]
+
+	if !ok {
+		return errors.New("Unknown list " + name)
+	}
+
+	value, ok := values[key]
+
+	if !ok {
+		return errors.New("Unknown key " + key)
+	}
+
+	return copyToClipboard(key, value)
+}
+
+func (c *Runner) Save() error {
+	return c.backend.Save(c.storage)
+}
+
+func (c *Runner) Delegate(command string, major string, minor string) error {
+	switch {
+	case command == "all":
+		return c.All()
+	case command == "edit":
+		return c.Edit()
+	case command == "switch":
+		return c.Switch(major)
+	case command == "storage":
+		return c.ShowStorage()
+	case command == "version":
+		return c.ShowVersion()
+	case command == "help":
+		return c.Help()
+	case c.ListExists(command):
+		switch {
+		case major == "delete":
+			return c.DeleteList(command)
+		case minor == "delete":
+			return c.DeleteItem(command, major)
+		case len(minor) > 0:
+			return c.AddItem(command, major, minor)
+		case len(major) > 0:
+			return c.SearchListItem(command, major)
+		default:
+			return c.DetailList(command)
+		}
+	case c.ItemExists(command):
+		return c.SearchItem(command)
+	default:
+		return c.AddList(command)
+	}
+
+	return errors.New("Command not recognized")
+}
 
 func main() {
-	flag.Parse()
-
-	backend, err := load(Config{})
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	store, err := backend.Fetch()
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if command == "all" {
-		return c.all()
-	}
-
-	switch {
-	case match("all"):
-		store.PrintAll()
-	case match("help"):
-		showHelpMessage()
-	case match("switch", "<storage>"):
-		//switch
-	case match("<list>", "delete"):
-		store.DeleteList(flag.Arg(0))
-
-		store.DeleteList(flag.Arg(0))
-	case match("<list>", "<name>", "<value>"):
-		//store.List(flag.Arg(0))
-	case match("<list>"):
-		name := flag.Arg(0)
-		item, found := store.FindItem(name)
-
-		if found {
-			fmt.Println(item)
-			break
-		}
-
-		list, found := store.FindList(name)
-
-		if found {
-			fmt.Println(list)
-			break
-		}
-
-		store.CreateList(name)
-		fmt.Printf("Boom! Created a new list called %s\n", name)
-	case len(store.Lists) == 0:
-		showEmptyMessage()
-	default:
-		store.PrintSummary()
-	}
-
-	err = backend.Save(store)
+	runner := Runner{}
+	err := runner.Execute()
 
 	if err != nil {
 		log.Fatal(err)
