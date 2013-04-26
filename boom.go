@@ -145,13 +145,6 @@ func (c *Runner) Overview() error {
 	return nil
 }
 
-// Testing method
-func (c *Runner) Inject(store Store, backend Backend) error {
-	c.backend = backend
-	c.storage = store
-	return nil
-}
-
 func (c *Runner) Execute() error {
 	flag.Parse()
 
