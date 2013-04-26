@@ -314,6 +314,28 @@ func (c *Runner) Save() error {
 	return c.backend.Save(c.storage)
 }
 
+func (c *Runner) EchoListItem(listName string, itemName string) error {
+	values, ok := c.storage[listName]
+	value, ok := values[itemName]
+
+	if !ok {
+		return errors.New("Unknown key " + itemName)
+	}
+
+  fmt.Println(value)
+  return nil
+}
+
+func (c *Runner) EchoItem(itemName string) error {
+	for _, values := range c.storage {
+		if value, ok := values[itemName]; ok {
+      fmt.Println(value)
+      return nil
+		}
+	}
+	return errors.New("Couldn't find key: " + itemName)
+}
+
 func (c *Runner) Delegate(command string, major string, minor string) error {
 	switch {
 	case command == "all":
@@ -328,6 +350,13 @@ func (c *Runner) Delegate(command string, major string, minor string) error {
 		return c.ShowVersion()
 	case command == "help":
 		return c.Help()
+  case command == "echo":
+    switch {
+      case c.ListExists(major):
+        return c.EchoListItem(major,minor)
+      default:
+        return c.EchoItem(major)
+    }
 	case c.ListExists(command):
 		switch {
 		case major == "delete":
