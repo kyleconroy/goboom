@@ -8,6 +8,8 @@ import (
 	"io/ioutil"
 	"log"
 	"os/exec"
+	"os/user"
+	"path"
 	"runtime"
 )
 
@@ -22,6 +24,20 @@ type Backend interface {
 	Fetch() (Store, error)
 }
 
+// In-memory store used for testing puposes
+type InMemoryBackend struct {
+	Db Store
+}
+
+func (b *InMemoryBackend) Fetch() (Store, error) {
+	return b.Db, nil
+}
+
+func (b *InMemoryBackend) Save(store Store) error {
+	b.Db = store
+	return nil
+}
+
 type JsonBackend struct {
 	Filename string
 }
@@ -30,7 +46,7 @@ func (jb *JsonBackend) Fetch() (Store, error) {
 	filebyte, err := ioutil.ReadFile(jb.Filename)
 
 	if err != nil {
-		return Store{}, err
+		return Store{}, nil
 	}
 
 	var db Store
@@ -61,7 +77,11 @@ func (jb *JsonBackend) Save(store Store) error {
 }
 
 func load(config Config) (Backend, error) {
-	backend := JsonBackend{Filename: "temp.json"}
+	usr, err := user.Current()
+	if err != nil {
+		return &JsonBackend{}, err
+	}
+	backend := JsonBackend{Filename: path.Join(usr.HomeDir, ".boom.json")}
 	return &backend, nil
 }
 
@@ -122,6 +142,13 @@ func (c *Runner) Overview() error {
 	fmt.Println("  $ boom <list-name> <item-name> <item-value>")
 	fmt.Println("You can then grab your new item:")
 	fmt.Println("  $ boom <item-name>")
+	return nil
+}
+
+// Testing method
+func (c *Runner) Inject(store Store, backend Backend) error {
+	c.backend = backend
+	c.storage = store
 	return nil
 }
 
