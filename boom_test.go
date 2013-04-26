@@ -1,20 +1,13 @@
 package main
 
-import (
-	"testing"
-)
-
 func BuildRunner() Runner {
 	c := Runner{}
 	c.Inject(Store{}, &InMemoryBackend{})
 	return c
 }
 
-func TestBoomVersion(*testing.T) {
+func ExampleVersion() {
 	runner := BuildRunner()
-	err := runner.Delegate("version", "", "")
-
-	if err {
-		t.Fail("Error returned")
-	}
+	runner.Delegate("version", "", "")
+	// Output: 0.0.1
 }
