@@ -342,15 +342,15 @@ func (c *Runner) EchoListItem(listName string, itemName string) error {
 		return errors.New("Unknown key " + itemName)
 	}
 
-  fmt.Println(value)
-  return nil
+	fmt.Println(value)
+	return nil
 }
 
 func (c *Runner) EchoItem(itemName string) error {
 	for _, values := range c.storage {
 		if value, ok := values[itemName]; ok {
-      fmt.Println(value)
-      return nil
+			fmt.Println(value)
+			return nil
 		}
 	}
 	return errors.New("Couldn't find key: " + itemName)
@@ -370,13 +370,13 @@ func (c *Runner) Delegate(command string, major string, minor string) error {
 		return c.ShowVersion()
 	case command == "help":
 		return c.Help()
-  case command == "echo":
-    switch {
-      case c.ListExists(major):
-        return c.EchoListItem(major,minor)
-      default:
-        return c.EchoItem(major)
-    }
+	case command == "echo":
+		switch {
+		case c.ListExists(major):
+			return c.EchoListItem(major, minor)
+		default:
+			return c.EchoItem(major)
+		}
 	case c.ListExists(command):
 		switch {
 		case major == "delete":
